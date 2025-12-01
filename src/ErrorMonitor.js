@@ -248,23 +248,25 @@ class ErrorMonitor {
   _setupMiniProgramErrorHandlers() {
     if (typeof uni !== 'undefined') {
       // 监听小程序错误事件
-      uni.onError && uni.onError(error => {
-        this._handleMiniProgramError({
-          type: 'miniProgram',
-          error,
-          timestamp: Date.now(),
+      uni.onError &&
+        uni.onError(error => {
+          this._handleMiniProgramError({
+            type: 'miniProgram',
+            error,
+            timestamp: Date.now(),
+          })
         })
-      })
 
       // 监听小程序页面错误
-      uni.onPageNotFound && uni.onPageNotFound(result => {
-        this._handleMiniProgramError({
-          type: 'pageNotFound',
-          path: result.path,
-          query: result.query,
-          timestamp: Date.now(),
+      uni.onPageNotFound &&
+        uni.onPageNotFound(result => {
+          this._handleMiniProgramError({
+            type: 'pageNotFound',
+            path: result.path,
+            query: result.query,
+            timestamp: Date.now(),
+          })
         })
-      })
 
       // 监听小程序网络请求错误
       const originalRequest = uni.request
@@ -389,7 +391,7 @@ class ErrorMonitor {
       } else {
         await this._sendToWebhook(errorInfo)
       }
-      
+
       console.log('[ErrorMonitor] 错误信息已处理')
     } catch (error) {
       console.error('[ErrorMonitor] 发送错误信息失败:', error)
@@ -408,9 +410,7 @@ class ErrorMonitor {
     }
 
     // 格式化错误信息
-    const message = this.config?.customFormatter 
-      ? this.config.customFormatter(errorInfo)
-      : this._formatErrorMessage(errorInfo)
+    const message = this.config?.customFormatter ? this.config.customFormatter(errorInfo) : this._formatErrorMessage(errorInfo)
 
     // 使用uni.request发送POST请求（适配uniapp环境）
     await new Promise((resolve, reject) => {
@@ -439,10 +439,11 @@ class ErrorMonitor {
    */
   _formatErrorMessage(errorInfo) {
     const timestamp = new Date(errorInfo.timestamp).toLocaleString('zh-CN')
+    const systemInfo = uni.getSystemInfoSync?.()
 
     let message = `🚨 JavaScript错误报告\n`
-    message += `📦 项目: ${this.projectInfo.name}\n`
-    message += `🏷️ 版本: ${this.projectInfo.version}\n`
+    message += `📦 项目: ${systemInfo.appName || this.projectInfo.name}\n`
+    message += `🏷️ 版本: ${systemInfo.appVersion || this.projectInfo.version}\n`
     message += `⏰ 时间: ${timestamp}\n`
     message += `📱 页面: ${errorInfo.page || '未知页面'}\n`
     message += `🌐 链接: ${errorInfo.url || '未知链接'}\n\n`
@@ -644,12 +645,12 @@ class ErrorMonitor {
    * @private
    */
   _getMode() {
-    if (typeof import !== 'undefined' && import.meta?.env?.MODE) {
-      try {
+    try {
+      if (import.meta?.env?.MODE) {
         return import.meta.env.MODE
-      } catch (error) {
-        // 忽略访问错误
       }
+    } catch (error) {
+      // 忽略访问错误
     }
     return 'unknown'
   }
