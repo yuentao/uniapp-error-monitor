@@ -104,7 +104,7 @@ export interface ErrorInfo {
   
   // 小程序错误特有字段
   /** 错误对象 */
-  error?: any
+  errorObject?: any
   /** 页面路径（pageNotFound 时） */
   path?: string
   /** 查询参数（pageNotFound 时） */

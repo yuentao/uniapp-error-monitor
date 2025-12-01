@@ -1,6 +1,7 @@
 import { defineConfig } from 'rollup'
 import babel from '@rollup/plugin-babel'
 import { terser } from 'rollup-plugin-terser'
+import typescript from '@rollup/plugin-typescript'
 
 const pkg = require('./package.json')
 
@@ -13,9 +14,10 @@ const external = [
 ]
 
 const plugins = [
+  typescript(),
   babel({
     babelHelpers: 'bundled',
-    extensions: ['.js', '.ts', '.vue'],
+    extensions: ['.js', '.ts'],
     exclude: ['node_modules/**'],
     presets: [
       ['@babel/preset-env', {

@@ -141,7 +141,8 @@ export function isProduction() {
 
   // 检查环境变量 MODE
   try {
-    if (typeof import !== 'undefined' && import.meta?.env?.MODE === 'development') {
+    // 使用 process.env 检测环境变量
+    if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'development') {
       return false
     }
   } catch (error) {

@@ -97,13 +97,5 @@ export {
   serializeError
 }
 
-// 导出类型定义
-export {
-  ErrorMonitorOptions,
-  ErrorType,
-  ErrorStats,
-  ErrorInfo
-} from './types'
-
 // 导出默认实例（方便直接使用）
 export default errorMonitorInstance
