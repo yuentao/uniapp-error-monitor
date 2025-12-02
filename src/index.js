@@ -209,37 +209,63 @@ class ErrorMonitor {
    * @param {boolean} [forceSend=false] 强制发送（忽略环境检查）
    */
   reportError(type = 'manual', error, context = {}, forceSend = false) {
+    // 自动提取API错误相关信息
+    let extractedError = error
+    let extractedContext = context
+    
+    if (type === 'api' && typeof error === 'object' && error.config) {
+      // 当type为'api'且error对象包含config属性时，自动提取API相关信息
+      const response = error
+      extractedContext = {
+        url: response.config?.url,
+        method: response.config?.method,
+        statusCode: response.data?.code || response.statusCode,
+        statusText: response.data?.msg || response.data?.message || '未知错误',
+        responseTime: Date.now() - (response.config?.startTime || Date.now()),
+        requestData: response.config?.data,
+        requestHeaders: response.config?.header,
+        environment: import.meta.env.MODE,
+        // 保留原有的error信息
+        ...context
+      }
+      extractedError = response.data?.msg || response.data?.message || response.message || error
+    }
+
     const errorInfo = {
       type,
-      error: error instanceof Error ? error.message : error,
-      stack: error instanceof Error ? error.stack : null,
-      context,
+      error: extractedError instanceof Error ? extractedError.message : extractedError,
+      stack: extractedError instanceof Error ? extractedError.stack : null,
+      context: extractedContext,
       timestamp: Date.now(),
-      url: error.url || this._getCurrentUrl(),
-      method: error.method || '',
+      url: extractedContext.url || this._getCurrentUrl(),
+      method: extractedContext.method || '',
       userAgent: this._getUserAgent(),
       page: getCurrentPageName(),
 
       // API错误特有字段
-      statusCode: error.statusCode,
-      statusText: error.statusText,
-      responseTime: error.responseTime,
-      requestData: error.requestData,
-      requestHeaders: error.requestHeaders,
-      requestId: error.requestId,
-      environment: error.environment,
+      statusCode: extractedContext.statusCode,
+      statusText: extractedContext.statusText,
+      responseTime: extractedContext.responseTime,
+      requestData: extractedContext.requestData,
+      requestHeaders: extractedContext.requestHeaders,
+      requestId: extractedContext.requestId,
+      environment: extractedContext.environment,
 
       // 网络错误特有字段
-      retryCount: error.retryCount,
-      networkType: error.networkType,
-      isConnected: error.isConnected,
+      retryCount: extractedContext.retryCount,
+      networkType: extractedContext.networkType,
+      isConnected: extractedContext.isConnected,
     }
 
+    // 更新错误统计
     this.errorStats.total++
     this.errorStats[type] = (this.errorStats[type] || 0) + 1
     this.errorStats.lastErrorTime = errorInfo.timestamp
 
-    if (forceSend) {
+    // 确定是否强制发送
+    const shouldForceSend = forceSend || (type === 'api' && extractedContext && typeof extractedContext === 'object')
+
+    if (shouldForceSend) {
       // 强制发送
       this._sendErrorToWebhook(errorInfo, 0, true)
     } else {
