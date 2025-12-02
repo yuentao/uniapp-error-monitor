@@ -13,6 +13,25 @@ const external = [
   'uniapp'
 ]
 
+// 复制 TypeScript 定义文件到 dist 目录
+function copyTypescriptDefinitions() {
+  return {
+    name: 'copy-types',
+    writeBundle() {
+      const fs = require('fs')
+      const path = require('path')
+      
+      const srcTypesFile = path.resolve(__dirname, 'src/index.d.ts')
+      const destTypesFile = path.resolve(__dirname, 'dist/index.d.ts')
+      
+      if (fs.existsSync(srcTypesFile)) {
+        fs.copyFileSync(srcTypesFile, destTypesFile)
+        console.log('✅ TypeScript definitions copied to dist/index.d.ts')
+      }
+    }
+  }
+}
+
 const plugins = [
   typescript(),
   babel({
@@ -27,7 +46,8 @@ const plugins = [
         }
       }]
     ]
-  })
+  }),
+  copyTypescriptDefinitions()
 ]
 
 export default defineConfig([
@@ -38,7 +58,8 @@ export default defineConfig([
       {
         file: pkg.module,
         format: 'es',
-        sourcemap: true
+        sourcemap: true,
+        exports: 'named'
       },
       // UMD 输出 (用于浏览器)
       {
@@ -48,13 +69,15 @@ export default defineConfig([
         sourcemap: true,
         globals: {
           'vue': 'Vue'
-        }
+        },
+        exports: 'named'
       },
       // CommonJS 输出 (用于 Node.js)
       {
         file: pkg.main,
         format: 'cjs',
-        sourcemap: true
+        sourcemap: true,
+        exports: 'named'
       }
     ],
     external,
@@ -69,6 +92,7 @@ export default defineConfig([
         format: 'umd',
         name: 'UniAppErrorMonitor',
         sourcemap: false,
+        exports: 'named',
         plugins: [terser()]
       }
     ],

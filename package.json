@@ -1,6 +1,6 @@
 {
   "name": "uniapp-error-monitor",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "专门为UniApp环境设计的错误监控和上报工具，支持全局错误捕获、Promise错误捕获、网络错误捕获等",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -40,9 +40,9 @@
     "build": "rollup -c",
     "dev": "rollup -c -w",
     "clean": "rimraf dist",
-    "lint": "eslint src/**/*.js",
-    "lint:fix": "eslint src/**/*.js --fix",
-    "prepublishOnly": "npm run clean && npm run build"
+    "type-check": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run type-check && npm run build",
+    "prepare": "npm run build"
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",

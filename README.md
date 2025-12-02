@@ -1,6 +1,6 @@
 # uniapp-error-monitor
 
-UniApp 错误监控上报插件 - 专业的 JavaScript 错误监控和上报解决方案
+🔍 UniApp 专业错误监控和上报工具 - 支持全平台、多场景错误捕获
 
 [![npm version](https://badge.fury.io/js/uniapp-error-monitor.svg)](https://badge.fury.io/js/uniapp-error-monitor)
 [![npm downloads](https://img.shields.io/npm/dm/uniapp-error-monitor.svg)](https://www.npmjs.com/package/uniapp-error-monitor)
@@ -8,17 +8,18 @@ UniApp 错误监控上报插件 - 专业的 JavaScript 错误监控和上报解�
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 [![rollup](https://img.shields.io/badge/rollup-build-blue.svg)](https://rollupjs.org/)
 
-## 🌟 特性
+## ✨ 核心特性
 
-- 🔍 **全面错误捕获**: 支持全局错误、Promise 错误、控制台错误、网络错误、小程序错误
-- 🎯 **环境智能**: 自动检测生产环境，非生产环境不启用错误上报
-- 🚀 **高性能**: 异步发送错误，不阻塞主线程
-- 🔄 **重试机制**: 网络失败自动重试，可配置重试次数和间隔
-- 📊 **错误统计**: 内置错误统计功能，便于数据分析
-- 🔧 **易于集成**: 零配置使用，支持自定义 webhook 和发送器
-- 📱 **多平台支持**: 支持 H5、微信小程序、App 等 UniApp 支持的所有平台
+- 🎯 **零配置使用**: 开箱即用，支持多种导入方式
+- 🔍 **全面错误捕获**: 全局错误、Promise错误、控制台错误、网络错误、小程序错误
+- 🧠 **环境智能**: 自动检测生产环境，非生产环境优雅降级
+- ⚡ **高性能**: 异步发送错误，不阻塞主线程
+- 🔄 **重试机制**: 网络失败自动重试，可配置次数和间隔
+- 📊 **错误统计**: 内置统计功能，便于数据分析
+- 🔧 **高度可定制**: 支持自定义发送器和格式化函数
+- 📱 **全平台支持**: H5、微信小程序、App、支付宝小程序等
 - 🛡️ **类型安全**: 完整的 TypeScript 类型定义
-- 📦 **模块化**: 支持 ESM、CommonJS、UMD 多种模块格式
+- 📦 **多格式输出**: 支持 ESM、CommonJS、UMD 格式
 
 ## 📦 安装
 
@@ -35,10 +36,10 @@ pnpm add uniapp-error-monitor
 
 ## 🚀 快速开始
 
-### 基础使用
+### 方式一：命名导出（推荐）
 
 ```javascript
-import { initErrorMonitor } from 'uniapp-error-monitor'
+import { initErrorMonitor, reportError, getErrorStats, wrapPromise } from 'uniapp-error-monitor'
 
 // 初始化错误监控
 initErrorMonitor({
@@ -49,56 +50,30 @@ initErrorMonitor({
 })
 
 // 手动上报错误
-import { reportError } from 'uniapp-error-monitor'
-
 reportError('manual', new Error('自定义错误'), {
   page: 'index',
   action: '用户操作失败'
 })
-```
 
-### Promise 包装
-
-```javascript
-import { wrapPromise } from 'uniapp-error-monitor'
-
-// 自动捕获 Promise 错误
+// Promise 包装（自动捕获 Promise 错误）
 const result = await wrapPromise(
   fetch('https://api.example.com/data')
 )
+
+// 获取错误统计
+const stats = getErrorStats()
+console.log('错误统计:', stats)
 ```
 
-## 📋 配置选项
-
-```typescript
-interface ErrorMonitorOptions {
-  // 基础配置
-  webhookUrl: string                     // Webhook 地址（必填）
-  enableGlobalError?: boolean            // 启用全局错误捕获（默认：true）
-  enablePromiseError?: boolean           // 启用 Promise 错误捕获（默认：true）
-  enableConsoleError?: boolean           // 启用 console.error 捕获（默认：false）
-  
-  // 重试配置
-  maxRetries?: number                    // 最大重试次数（默认：3）
-  retryDelay?: number                    // 重试延迟时间(ms)（默认：1000）
-  
-  // 高级配置
-  forceEnable?: boolean                  // 强制启用错误监控（忽略环境检查）
-  formatter?: (error: ErrorInfo) => string  // 自定义格式化函数
-  sender?: (payload: ErrorInfo) => Promise<void> // 自定义发送器
-}
-```
-
-## 🔧 高级使用
-
-### 自定义发送器
+### 方式二：类实例（高级用法）
 
 ```javascript
 import { ErrorMonitor } from 'uniapp-error-monitor'
 
+// 创建自定义实例
 const errorMonitor = new ErrorMonitor()
 
-// 使用自定义发送器
+// 设置自定义发送器
 errorMonitor.setSender(async (errorInfo) => {
   // 发送到自己的服务器
   await fetch('/api/errors', {
@@ -107,18 +82,6 @@ errorMonitor.setSender(async (errorInfo) => {
     body: JSON.stringify(errorInfo)
   })
 })
-
-errorMonitor.init({
-  webhookUrl: 'custom-sender' // 使用自定义发送器时，webhookUrl 可以设置为任意值
-})
-```
-
-### 自定义错误格式化
-
-```javascript
-import { ErrorMonitor } from 'uniapp-error-monitor'
-
-const errorMonitor = new ErrorMonitor()
 
 // 设置自定义格式化函数
 errorMonitor.setFormatter((errorInfo) => {
@@ -129,56 +92,181 @@ errorMonitor.setFormatter((errorInfo) => {
   时间：${new Date(errorInfo.timestamp).toLocaleString()}`
 })
 
-errorMonitor.init({
+// 初始化
+errorMonitor.initErrorMonitor({
   webhookUrl: 'your-webhook-url'
+})
+
+// 使用实例方法
+errorMonitor.reportError('api', new Error('接口调用失败'))
+```
+
+### 方式三：默认实例（向后兼容）
+
+```javascript
+import ErrorMonitor from 'uniapp-error-monitor'
+
+// 使用默认实例
+ErrorMonitor.initErrorMonitor({
+  webhookUrl: 'https://your-webhook-url.com'
+})
+
+ErrorMonitor.reportError('manual', new Error('测试错误'))
+```
+
+## ⚙️ 配置选项
+
+```typescript
+interface ErrorMonitorOptions {
+  // 基础配置
+  webhookUrl?: string           // Webhook 地址（可选，使用环境变量）
+  enableGlobalError?: boolean   // 启用全局错误捕获（默认：true）
+  enablePromiseError?: boolean  // 启用 Promise 错误捕获（默认：true）
+  enableConsoleError?: boolean  // 启用 console.error 捕获（默认：false）
+  
+  // 重试配置
+  maxRetries?: number           // 最大重试次数（默认：3）
+  retryDelay?: number           // 重试延迟时间(ms)（默认：1000）
+  
+  // 高级配置
+  forceEnable?: boolean         // 强制启用错误监控（忽略环境检查）
+  sender?: (errorInfo: ErrorInfo) => Promise<void>  // 自定义发送器
+  formatter?: (errorInfo: ErrorInfo) => string      // 自定义格式化函数
+}
+```
+
+## 📊 错误类型
+
+| 类型 | 说明 | 自动捕获 | 手动上报 | 触发场景 |
+|------|------|----------|----------|----------|
+| `global` | 全局 JavaScript 错误 | ✅ | ❌ | `window.onerror` |
+| `promise` | Promise 拒绝错误 | ✅ | ❌ | `unhandledrejection` |
+| `console` | console.error 输出 | ✅ | ❌ | 启用后自动捕获 |
+| `miniProgram` | 小程序特定错误 | ✅ | ❌ | `uni.onError`, `uni.onPageNotFound` |
+| `network` | 网络请求失败 | ✅ | ❌ | 拦截的 `uni.request` 失败 |
+| `api` | API 接口错误 | ❌ | ✅ | 手动调用 `reportError` |
+| `manual` | 手动上报错误 | ❌ | ✅ | 手动调用 `reportError` |
+
+## 🔧 高级用法
+
+### 环境检测
+
+```javascript
+import { getEnvironmentInfo } from 'uniapp-error-monitor'
+
+const envInfo = getEnvironmentInfo()
+
+if (envInfo.isProduction) {
+  console.log('生产环境，错误监控已启用')
+} else {
+  console.log('开发环境，错误监控已禁用')
+}
+```
+
+### 重置统计
+
+```javascript
+import { resetErrorStats } from 'uniapp-error-monitor'
+
+// 重置错误统计（在页面刷新或特定事件后）
+resetErrorStats()
+console.log('错误统计已重置')
+```
+
+### 丰富的错误上下文
+
+```javascript
+reportError('global', new Error('页面崩溃'), {
+  // 用户信息
+  userId: 'user123',
+  userAgent: navigator.userAgent,
+  
+  // 页面信息
+  currentPage: getCurrentPageName(),
+  routeParams: getCurrentPage()?.$page?.fullPath,
+  
+  // 业务信息
+  action: '用户点击按钮',
+  component: 'UserProfile',
+  
+  // 性能信息
+  loadTime: performance.now(),
+  memoryUsage: performance.memory?.usedJSHeapSize,
+  
+  // 自定义数据
+  customData: {
+    sessionId: getSessionId(),
+    feature: 'user_management'
+  }
 })
 ```
 
-### 获取错误统计
+### 批量错误处理
 
 ```javascript
-import { getErrorStats } from 'uniapp-error-monitor'
-
-const stats = getErrorStats()
-console.log('错误统计:', stats)
-/*
-输出：
-{
-  total: 5,
-  global: 2,
-  promise: 1,
-  console: 0,
-  miniProgram: 1,
-  network: 1,
-  lastErrorTime: 1640995200000
-}
-*/
+// 定时检查错误状态
+setInterval(() => {
+  const stats = getErrorStats()
+  if (stats.total > 10) {
+    console.warn('检测到大量错误:', stats)
+    // 可以发送告警或执行其他处理逻辑
+  }
+}, 60000) // 每分钟检查一次
 ```
 
-## 📊 错误类型说明
+## 🛡️ TypeScript 支持
 
-| 错误类型 | 说明 | 触发条件 |
-|---------|------|---------|
-| `global` | 全局 JavaScript 错误 | `window.onerror` 捕获 |
-| `promise` | 未处理的 Promise 拒绝 | `unhandledrejection` 事件 |
-| `console` | console.error 输出 | 手动启用后捕获 |
-| `miniProgram` | 小程序特定错误 | `uni.onError`, `uni.onPageNotFound` |
-| `network` | 网络请求失败 | 拦截的 `uni.request` 失败 |
-| `api` | API 接口错误 | 手动上报的接口错误 |
-| `manual` | 手动上报的错误 | 手动调用 `reportError` |
+完整的类型安全支持：
 
-## 🏗️ 构建配置
+```typescript
+import type { 
+  ErrorMonitorOptions, 
+  ErrorType, 
+  ErrorStats,
+  EnvironmentInfo,
+  ErrorInfo 
+} from 'uniapp-error-monitor'
+
+// 类型安全的配置
+const options: ErrorMonitorOptions = {
+  webhookUrl: 'https://example.com/webhook',
+  enableGlobalError: true,
+  enablePromiseError: true,
+  maxRetries: 5,
+  retryDelay: 2000,
+}
+
+// 类型安全的错误上报
+const reportTypeSafeError = (type: ErrorType, message: string) => {
+  reportError(type, new Error(message), {
+    timestamp: Date.now(),
+    userId: '12345'
+  })
+}
+```
+
+## 📱 平台兼容性
+
+- ✅ **微信小程序**: 完整支持，包括所有错误类型
+- ✅ **H5**: 完整支持，支持所有现代浏览器
+- ✅ **App (iOS/Android)**: 完整支持
+- ✅ **支付宝小程序**: 基本支持
+- ✅ **字节跳动小程序**: 基本支持
+- ✅ **百度小程序**: 基本支持
+- ✅ **快应用**: 基本支持
+
+## 🏗️ 环境配置
 
 ### 环境变量
 
 在你的项目中设置环境变量：
 
-```javascript
-// .env 文件
+```bash
+# .env 文件
 VITE_WEBHOOK=https://your-webhook-url.com
 ```
 
-### 开发环境自动禁用
+### 环境检测逻辑
 
 插件会在以下情况下自动禁用（非生产环境）：
 
@@ -188,36 +276,22 @@ VITE_WEBHOOK=https://your-webhook-url.com
 
 如需强制启用，设置 `forceEnable: true`。
 
-## 🔍 TypeScript 支持
+## 📦 构建产物
 
-完整的 TypeScript 类型支持：
+构建后会在 `dist/` 目录生成：
 
-```typescript
-import { ErrorMonitor, ErrorMonitorOptions, ErrorType, ErrorStats } from 'uniapp-error-monitor'
+- `index.js` - CommonJS 格式（Node.js）
+- `index.esm.js` - ES Module 格式（现代构建工具）
+- `index.umd.js` - UMD 格式（浏览器直接使用）
+- `index.umd.min.js` - UMD 压缩版
+- `index.d.ts` - TypeScript 类型声明
+- `*.map` - Source map 文件
 
-const options: ErrorMonitorOptions = {
-  webhookUrl: 'https://example.com/webhook',
-  maxRetries: 3
-}
-
-const errorMonitor = new ErrorMonitor(options)
-```
-
-## 📱 平台兼容性
-
-- ✅ **微信小程序**: 完整支持
-- ✅ **H5**: 完整支持  
-- ✅ **App (iOS/Android)**: 完整支持
-- ✅ **支付宝小程序**: 基本支持
-- ✅ **字节跳动小程序**: 基本支持
-- ✅ **百度小程序**: 基本支持
-- ✅ **快应用**: 基本支持
-
-## 🛠️ 开发调试
+## 🔧 开发调试
 
 ```bash
 # 克隆项目
-git clone https://github.com/yuentao/uniapp-error-monitor.git
+git clone https://github.com/your-username/uniapp-error-monitor.git
 cd uniapp-error-monitor
 
 # 安装依赖
@@ -229,28 +303,24 @@ npm run dev
 # 类型检查
 npm run type-check
 
+# 代码检查
+npm run lint
+
 # 构建
 npm run build
 
-# 单元测试
-npm run test
+# 发布
+npm publish
 ```
 
-## 📦 构建产物
+## 📄 使用示例
 
-构建后会在 `dist/` 目录生成：
+完整的使用示例请参考 [USAGE_EXAMPLES.js](./USAGE_EXAMPLES.js) 文件。
 
-- `index.js` - CommonJS 格式
-- `index.mjs` - ES Module 格式  
-- `index.umd.js` - UMD 格式（用于浏览器）
-- `index.umd.min.js` - UMD 压缩版
-- `index.d.ts` - TypeScript 类型声明
-- `types/` - 类型声明目录
+## 🤝 贡献指南
+
+欢迎提交 Issue 和 Pull Request！
 
 ## 📄 许可证
 
-MIT License - 详见 [LICENSE](LICENSE) 文件
-
----
-
-⭐ 如果这个项目对你有帮助，请给它一个星标！
+MIT License - 详见 [LICENSE](./LICENSE) 文件
