@@ -1,6 +1,6 @@
 {
   "name": "uniapp-error-monitor",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "专门为UniApp环境设计的错误监控和上报工具，支持全局错误捕获、Promise错误捕获、网络错误捕获等",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
