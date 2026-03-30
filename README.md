@@ -11,15 +11,28 @@
 ## ✨ 核心特性
 
 - 🎯 **零配置使用**: 开箱即用，支持多种导入方式
+
 - 🔍 **全面错误捕获**: 全局错误、Promise错误、控制台错误、网络错误、小程序错误
+
 - 🧠 **环境智能**: 自动检测生产环境，非生产环境优雅降级
+
 - ⚡ **高性能**: 异步发送错误，不阻塞主线程
+
 - 🔄 **重试机制**: 网络失败自动重试，可配置次数和间隔
+
 - 📊 **错误统计**: 内置统计功能，便于数据分析
+
 - 🔧 **高度可定制**: 支持自定义发送器和格式化函数
+
 - 📱 **全平台支持**: H5、微信小程序、App、支付宝小程序等
+
 - 🛡️ **类型安全**: 完整的 TypeScript 类型定义
+
 - 📦 **多格式输出**: 支持 ESM、CommonJS、UMD 格式
+
+- 🎚️ **错误级别控制**: 支持 strict/standard/silent 三种监控模式
+
+- 🔄 **错误去重**: 相同错误在指定间隔内只上报一次，避免重复告警
 
 ## 📦 安装
 
@@ -36,18 +49,39 @@ pnpm add uniapp-error-monitor
 
 ## 🚀 快速开始
 
+
+
 ### 方式一：命名导出（推荐）
 
+
+
 ```javascript
-import { initErrorMonitor, reportError, getErrorStats, wrapPromise } from 'uniapp-error-monitor'
+
+import { 
+  initErrorMonitor, 
+  reportError, 
+  getErrorStats, 
+  wrapPromise,
+  setErrorLevel,
+  clearErrorCache,
+  ERROR_LEVEL
+} from 'uniapp-error-monitor'
+
 
 // 初始化错误监控
 initErrorMonitor({
-  webhookUrl: 'https://your-webhook-url.com', // 必填
-  enableGlobalError: true,       // 启用全局错误捕获
-  enablePromiseError: true,      // 启用 Promise 错误捕获
-  enableConsoleError: false,     // 禁用 console.error 捕获
+  webhookUrl: 'https://your-webhook-url.com',  // 必填
+  enableGlobalError: true,     // 启用全局错误捕获
+  enablePromiseError: true,    // 启用 Promise 错误捕获
+  enableConsoleError: false,   // 禁用 console.error 捕获
+  errorLevel: ERROR_LEVEL.STRICT,  // 错误级别：strict/standard/silent
+  dedupInterval: 60000,        // 错误去重间隔（毫秒），默认1分钟
 })
+
+
+// 设置错误级别（可选）
+setErrorLevel(ERROR_LEVEL.STANDARD)  // 切换为标准模式
+
 
 // 手动上报错误
 reportError('manual', new Error('自定义错误'), {
@@ -55,14 +89,21 @@ reportError('manual', new Error('自定义错误'), {
   action: '用户操作失败'
 })
 
+
 // Promise 包装（自动捕获 Promise 错误）
 const result = await wrapPromise(
   fetch('https://api.example.com/data')
 )
 
+
 // 获取错误统计
 const stats = getErrorStats()
 console.log('错误统计:', stats)
+
+
+// 清空错误去重缓存（可选）
+clearErrorCache()
+
 ```
 
 ### 方式二：类实例（高级用法）
@@ -116,24 +157,70 @@ ErrorMonitor.reportError('manual', new Error('测试错误'))
 
 ## ⚙️ 配置选项
 
+
+
 ```typescript
+
 interface ErrorMonitorOptions {
   // 基础配置
   webhookUrl?: string           // Webhook 地址（可选，使用环境变量）
   enableGlobalError?: boolean   // 启用全局错误捕获（默认：true）
   enablePromiseError?: boolean  // 启用 Promise 错误捕获（默认：true）
   enableConsoleError?: boolean  // 启用 console.error 捕获（默认：false）
+
+
+  // 错误级别配置
+  errorLevel?: 'strict' | 'standard' | 'silent'  // 错误级别（默认：silent）
   
+
+  // 错误去重配置
+  dedupInterval?: number        // 相同错误去重间隔(ms)（默认：60000，即1分钟）
+
+
   // 重试配置
   maxRetries?: number           // 最大重试次数（默认：3）
   retryDelay?: number           // 重试延迟时间(ms)（默认：1000）
-  
+
+
   // 高级配置
   forceEnable?: boolean         // 强制启用错误监控（忽略环境检查）
   sender?: (errorInfo: ErrorInfo) => Promise<void>  // 自定义发送器
   formatter?: (errorInfo: ErrorInfo) => string      // 自定义格式化函数
 }
+
 ```
+
+
+
+### 错误级别说明
+
+
+
+| 级别 | 说明 | 监控范围 |
+
+|------|------|----------|
+
+| `strict` | 严格模式 | 监控所有错误（global、promise、console、miniProgram、api、network） |
+
+| `standard` | 标准模式 | 监控基本错误（global、promise、miniProgram） |
+
+| `silent` | 静默模式 | 仅监控严重错误（miniProgram、pageNotFound） |
+
+
+
+### 错误严重程度分类
+
+
+
+| 严重程度 | 错误类型 |
+
+|----------|----------|
+
+| **critical** (严重) | miniProgram, pageNotFound |
+
+| **normal** (普通) | global, promise, api, network, manual |
+
+| **minor** (轻微) | console |
 
 ## 📊 错误类型
 
@@ -171,6 +258,35 @@ import { resetErrorStats } from 'uniapp-error-monitor'
 // 重置错误统计（在页面刷新或特定事件后）
 resetErrorStats()
 console.log('错误统计已重置')
+```
+
+### 错误级别控制
+
+```javascript
+import { setErrorLevel, getErrorLevel, ERROR_LEVEL } from 'uniapp-error-monitor'
+
+// 获取当前错误级别
+const currentLevel = getErrorLevel()
+console.log('当前错误级别:', currentLevel)
+
+// 设置错误级别
+setErrorLevel(ERROR_LEVEL.STRICT)   // 严格模式：监控所有错误
+setErrorLevel(ERROR_LEVEL.STANDARD) // 标准模式：监控基本错误
+setErrorLevel(ERROR_LEVEL.SILENT)   // 静默模式：仅监控严重错误
+```
+
+### 错误去重管理
+
+```javascript
+import { clearErrorCache } from 'uniapp-error-monitor'
+
+// 清空错误去重缓存（允许相同错误重新上报）
+clearErrorCache()
+
+// 去重机制说明：
+// - 相同错误在 dedupInterval 间隔内只会被上报一次
+// - 默认间隔为 60 秒（60000ms）
+// - 可通过配置 dedupInterval 自定义间隔时间
 ```
 
 ### 丰富的错误上下文
@@ -216,33 +332,51 @@ setInterval(() => {
 
 ## 🛡️ TypeScript 支持
 
+
+
 完整的类型安全支持：
 
+
 ```typescript
+
 import type { 
   ErrorMonitorOptions, 
   ErrorType, 
-  ErrorStats,
-  EnvironmentInfo,
+  ErrorStats, 
+  EnvironmentInfo, 
   ErrorInfo 
 } from 'uniapp-error-monitor'
 
+import { 
+  initErrorMonitor, 
+  reportError, 
+  setErrorLevel,
+  ERROR_LEVEL 
+} from 'uniapp-error-monitor'
+
+
 // 类型安全的配置
+
 const options: ErrorMonitorOptions = {
   webhookUrl: 'https://example.com/webhook',
   enableGlobalError: true,
   enablePromiseError: true,
+  errorLevel: ERROR_LEVEL.STRICT,
+  dedupInterval: 60000,
   maxRetries: 5,
   retryDelay: 2000,
 }
 
+
 // 类型安全的错误上报
+
 const reportTypeSafeError = (type: ErrorType, message: string) => {
   reportError(type, new Error(message), {
     timestamp: Date.now(),
     userId: '12345'
   })
 }
+
 ```
 
 ## 📱 平台兼容性

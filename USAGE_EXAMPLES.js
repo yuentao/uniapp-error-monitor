@@ -12,17 +12,23 @@ import {
   initErrorMonitor, 
   reportError, 
   getErrorStats, 
-  wrapPromise 
+  wrapPromise,
+  setErrorLevel,
+  getErrorLevel,
+  clearErrorCache,
+  ERROR_LEVEL
 } from 'uniapp-error-monitor'
 
 // 初始化错误监控
 initErrorMonitor({
-  webhookUrl: 'https://your-webhook-url.com', // 必填
-  enableGlobalError: true,       // 启用全局错误捕获
-  enablePromiseError: true,      // 启用 Promise 错误捕获
-  enableConsoleError: false,     // 禁用 console.error 捕获
-  maxRetries: 3,                 // 最大重试次数
-  retryDelay: 1000,              // 重试延迟时间(ms)
+  webhookUrl: 'https://your-webhook-url.com',  // 必填
+  enableGlobalError: true,     // 启用全局错误捕获
+  enablePromiseError: true,    // 启用 Promise 错误捕获
+  enableConsoleError: false,   // 禁用 console.error 捕获
+  errorLevel: ERROR_LEVEL.STRICT,  // 错误级别：strict/standard/silent
+  dedupInterval: 60000,        // 错误去重间隔（毫秒），默认1分钟
+  maxRetries: 3,               // 最大重试次数
+  retryDelay: 1000,            // 重试延迟时间(ms)
 })
 
 // 手动上报错误
@@ -104,37 +110,73 @@ ErrorMonitorDefault.initErrorMonitor({
 ErrorMonitorDefault.reportError('manual', new Error('测试错误'))
 
 // ============================================================================
+
 // 4. TypeScript 类型安全使用
+
 // ============================================================================
 
+
+
 import type { 
+
   ErrorMonitorOptions, 
+
   ErrorType, 
-  ErrorStats,
+
+  ErrorStats, 
+
   EnvironmentInfo 
+
 } from 'uniapp-error-monitor'
 
+
+
 // 类型安全的配置
+
 const options: ErrorMonitorOptions = {
+
   webhookUrl: 'https://example.com/webhook',
+
   enableGlobalError: true,
+
   enablePromiseError: true,
+
+  errorLevel: ERROR_LEVEL.STRICT,
+
+  dedupInterval: 60000,
+
   maxRetries: 5,
+
   retryDelay: 2000,
+
   forceEnable: false
+
 }
+
+
 
 // 类型安全的错误上报
+
 const reportTypeSafeError = (type: ErrorType, message: string) => {
+
   reportError(type, new Error(message), {
+
     timestamp: Date.now(),
+
     userId: '12345'
+
   })
+
 }
 
+
+
 // 类型安全的统计获取
+
 const getSafeStats = (): ErrorStats => {
+
   return getErrorStats()
+
 }
 
 // ============================================================================
@@ -216,15 +258,49 @@ reportError('global', new Error('页面崩溃'), {
 })
 
 // ============================================================================
-// 8. 批量错误处理
+// 9. 错误级别控制
+// ============================================================================
+
+// 获取当前错误级别
+const currentLevel = getErrorLevel()
+console.log('当前错误级别:', currentLevel)
+
+// 设置错误级别
+setErrorLevel(ERROR_LEVEL.STRICT)   // 严格模式：监控所有错误
+setErrorLevel(ERROR_LEVEL.STANDARD) // 标准模式：监控基本错误
+setErrorLevel(ERROR_LEVEL.SILENT)   // 静默模式：仅监控严重错误
+
+// 错误级别说明：
+// - strict: 监控所有错误（global, promise, console, miniProgram, api, network）
+// - standard: 监控基本错误（global, promise, miniProgram）
+// - silent: 仅监控严重错误（miniProgram, pageNotFound）
+
+// ============================================================================
+// 10. 错误去重管理
+// ============================================================================
+
+// 清空错误去重缓存（允许相同错误重新上报）
+clearErrorCache()
+
+// 去重机制说明：
+// - 相同错误在 dedupInterval 间隔内只会被上报一次
+// - 默认间隔为 60 秒（60000ms）
+// - 可通过配置 dedupInterval 自定义间隔时间
+
+// 示例：配置更短的去重间隔
+initErrorMonitor({
+  webhookUrl: 'https://your-webhook-url.com',
+  dedupInterval: 30000, // 30秒去重间隔
+})
+
+// ============================================================================
+// 11. 批量错误处理
 // ============================================================================
 
 // 重置错误统计（在页面刷新或特定事件后）
-const resetStats = () => {
-  import { resetErrorStats } from 'uniapp-error-monitor'
-  resetErrorStats()
-  console.log('错误统计已重置')
-}
+import { resetErrorStats } from 'uniapp-error-monitor'
+resetErrorStats()
+console.log('错误统计已重置')
 
 // 定时检查错误状态
 setInterval(() => {
