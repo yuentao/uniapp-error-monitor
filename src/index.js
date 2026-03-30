@@ -25,38 +25,45 @@ const ERROR_SEVERITY = {
   pageNotFound: 'critical', // 页面未找到 - 严重
 }
 /**
+ * 默认错误去重间隔时间（毫秒）
+ * @constant {number}
+ */
+const DEFAULT_DEDUP_INTERVAL = 60 * 1000 // 1分钟
+
+/**
  * 错误监控和上报类
  */
 class ErrorMonitor {
-  constructor(options = {}) {
-    // 初始化错误统计
-    this.errorStats = {
-      total: 0,
-      global: 0,
-      promise: 0,
-      console: 0,
-      miniProgram: 0,
-      api: 0,
-      network: 0,
-      lastErrorTime: null,
-    }
-    // Promise包装方法
-    this.wrapPromise = null
-    // 配置信息
-    this.config = null
-    // 项目信息
-    this.projectInfo = {
-      name: '未命名项目',
-      version: '0.0.0',
-    }
-    // 尝试从 manifest.json 加载项目信息
-    this._loadProjectInfo()
-    // 应用初始配置
-    if (Object.keys(options).length > 0) {
-      this.initErrorMonitor(options)
-    }
-  }
-  /**
+	constructor(options = {}) {
+		// 初始化错误统计
+		this.errorStats = {
+			total: 0,
+			global: 0,
+			promise: 0,
+			console: 0,
+			miniProgram: 0,
+			api: 0,
+			network: 0,
+			lastErrorTime: null,
+		}
+		// Promise包装方法
+		this.wrapPromise = null
+		// 配置信息
+		this.config = null
+		// 项目信息
+		this.projectInfo = {
+			name: '未命名项目',
+			version: '0.0.0',
+		}
+		// 错误去重缓存：存储最近上报的错误签名和时间戳
+		this._errorCache = new Map()
+		// 尝试从 manifest.json 加载项目信息
+		this._loadProjectInfo()
+		// 应用初始配置
+		if (Object.keys(options).length > 0) {
+			this.initErrorMonitor(options)
+		}
+	}  /**
    * 检测是否为生产环境
    * @private
    * @returns {boolean} 是否为生产环境
@@ -80,30 +87,31 @@ class ErrorMonitor {
     return true
   }
   /**
-   * 初始化全局错误监控
-   * @param {Object} options 配置选项
-   * @param {boolean} [options.enableGlobalError=true] 是否启用全局错误捕获
-   * @param {boolean} [options.enablePromiseError=true] 是否启用Promise错误捕获
-   * @param {boolean} [options.enableConsoleError=true] 是否启用console.error捕获
-   * @param {string} [options.webhookUrl] 自定义webhook地址，不传则使用环境变量
-   * @param {number} [options.maxRetries=3] 发送失败时最大重试次数
-   * @param {number} [options.retryDelay=1000] 重试延迟时间(毫秒)
-   * @param {boolean} [options.forceEnable=false] 强制启用错误监控（忽略环境检查）
-   * @param {string} [options.errorLevel='standard'] 错误级别：strict(所有错误)、standard(基本错误)、silent(仅严重错误)
-   */
-  initErrorMonitor(options = {}) {
-    const config = {
-      enableGlobalError: true,
-      enablePromiseError: true,
-      enableConsoleError: false,
-      webhookUrl: import.meta.env.VITE_WEBHOOK,
-      maxRetries: 3,
-      retryDelay: 1000,
-      forceEnable: false,
-      errorLevel: ERROR_LEVEL.SILENT, // 默认静默模式
-      ...options,
-    }
-    // 环境检查：只在生产环境下启用错误监控
+  	 * 初始化全局错误监控
+  	 * @param {Object} options 配置选项
+  	 * @param {boolean} [options.enableGlobalError=true] 是否启用全局错误捕获
+  	 * @param {boolean} [options.enablePromiseError=true] 是否启用Promise错误捕获
+  	 * @param {boolean} [options.enableConsoleError=true] 是否启用console.error捕获
+  	 * @param {string} [options.webhookUrl] 自定义webhook地址，不传则使用环境变量
+  	 * @param {number} [options.maxRetries=3] 发送失败时最大重试次数
+  	 * @param {number} [options.retryDelay=1000] 重试延迟时间(毫秒)
+  	 * @param {boolean} [options.forceEnable=false] 强制启用错误监控（忽略环境检查）
+  	 * @param {string} [options.errorLevel='standard'] 错误级别：strict(所有错误)、standard(基本错误)、silent(仅严重错误)
+  	 * @param {number} [options.dedupInterval=60000] 相同错误去重间隔时间(毫秒)，默认1分钟
+  	 */
+  	initErrorMonitor(options = {}) {
+  		const config = {
+  			enableGlobalError: true,
+  			enablePromiseError: true,
+  			enableConsoleError: false,
+  			webhookUrl: import.meta.env.VITE_WEBHOOK,
+  			maxRetries: 3,
+  			retryDelay: 1000,
+  			forceEnable: false,
+  			errorLevel: ERROR_LEVEL.SILENT, // 默认静默模式
+  			dedupInterval: DEFAULT_DEDUP_INTERVAL, // 默认1分钟去重间隔
+  			...options,
+  		}    // 环境检查：只在生产环境下启用错误监控
     if (!config.forceEnable && !this._isProduction()) {
       console.info('当前为非生产环境，错误监控已禁用')
       return
@@ -229,12 +237,23 @@ class ErrorMonitor {
    * @param {boolean} [forceSend=false] 强制发送（忽略环境检查和错误级别过滤）
    */
   reportError(type = 'manual', error, context = {}, forceSend = false) {
-    // 错误级别过滤（forceSend 时跳过）
-    if (!forceSend && !this._shouldReportError(type)) {
-      console.info(`错误级别过滤：跳过上报 ${type} 类型错误`)
-      return
-    }
-    // 自动提取API错误相关信息    let extractedError = error
+  		// 错误级别过滤（forceSend 时跳过）
+  		if (!forceSend && !this._shouldReportError(type)) {
+  			console.info(`错误级别过滤：跳过上报 ${type} 类型错误`)
+  			return
+  		}
+  
+  		// 生成错误签名用于去重
+  		const errorSignature = this._generateErrorSignature(type, error, context)
+  		
+  		// 错误去重检查（forceSend 时跳过）
+  		if (!forceSend && this._isDuplicateError(errorSignature)) {
+  			console.info(`错误去重：跳过重复错误 ${errorSignature}`)
+  			return
+  		}
+  
+  		// 自动提取API错误相关信息
+  		let extractedError = error
     let extractedContext = context
     if (type === 'api' && typeof error === 'object' && error.config) {
       // 当type为'api'且error对象包含config属性时，自动提取API相关信息
@@ -356,121 +375,310 @@ class ErrorMonitor {
     return this.config?.errorLevel || ERROR_LEVEL.SILENT
   }
   /**
-   * 设置错误级别
-   * @param {string} level 错误级别 (strict/standard/silent)
-   */
-  setErrorLevel(level) {
-    const validLevels = [ERROR_LEVEL.STRICT, ERROR_LEVEL.STANDARD, ERROR_LEVEL.SILENT]
-    if (!validLevels.includes(level)) {
-      console.warn(`无效的错误级别 "${level}"，有效值为: strict, standard, silent`)
-      return
-    }
-    if (this.config) {
-      this.config.errorLevel = level
-      console.log(`错误级别已更新为: ${level}`)
-    }
-  }
+  	 * 设置错误级别
+  	 * @param {string} level 错误级别 (strict/standard/silent)
+  	 */
+  	setErrorLevel(level) {
+  		const validLevels = [ERROR_LEVEL.STRICT, ERROR_LEVEL.STANDARD, ERROR_LEVEL.SILENT]
+  		if (!validLevels.includes(level)) {
+  			console.warn(`无效的错误级别 "${level}"，有效值为: strict, standard, silent`)
+  			return
+  		}
+  		if (this.config) {
+  			this.config.errorLevel = level
+  			console.log(`错误级别已更新为: ${level}`)
+  		}
+  	}
+  
+  	/**
+  		 * 生成错误签名（用于去重）
+  		 * @private
+  		 * @param {string|Object} typeOrErrorInfo 错误类型或错误信息对象
+  		 * @param {Error|Object} [error] 错误对象（当第一个参数是类型时使用）
+  		 * @param {Object} [context] 错误上下文（当第一个参数是类型时使用）
+  		 * @returns {string} 错误签名
+  		 */
+  		_generateErrorSignature(typeOrErrorInfo, error, context) {
+  			// 兼容两种调用方式
+  			let type, errorInfo
+  			if (typeof typeOrErrorInfo === 'string') {
+  				type = typeOrErrorInfo
+  				// 根据类型提取签名所需的关键信息
+  				const errorMessage = error instanceof Error ? error.message : (typeof error === 'string' ? error : JSON.stringify(error))
+  				const url = context?.url || ''
+  				const method = context?.method || ''
+  				const statusCode = context?.statusCode || 0
+  				
+  				switch (type) {
+  					case 'global':
+  						return `${type}:${errorMessage}:${context?.source || ''}:${context?.lineno || 0}:${context?.colno || 0}`
+  					case 'promise':
+  						return `${type}:${errorMessage}`
+  					case 'console':
+  						return `${type}:${errorMessage}`
+  					case 'miniProgram':
+  					case 'pageNotFound':
+  						return `${type}:${errorMessage}:${context?.path || ''}`
+  					case 'network':
+  						return `${type}:${url}:${method}`
+  					case 'api':
+  						return `${type}:${url}:${method}:${statusCode}`
+  					default:
+  						return `${type}:${errorMessage}`
+  				}
+  			} else {
+  				// 旧的方式：传入 errorInfo 对象
+  				errorInfo = typeOrErrorInfo
+  				type = errorInfo.type || 'unknown'
+  				let signature = type
+  	
+  				switch (type) {
+  					case 'global':
+  						signature = `${type}:${errorInfo.message || ''}:${errorInfo.source || ''}:${errorInfo.lineno || 0}:${errorInfo.colno || 0}`
+  						break
+  					case 'promise':
+  						const reason = typeof errorInfo.reason === 'object'
+  							? JSON.stringify(errorInfo.reason)
+  							: String(errorInfo.reason || '')
+  						signature = `${type}:${reason}`
+  						break
+  					case 'console':
+  						signature = `${type}:${(errorInfo.args || []).join('|')}`
+  						break
+  					case 'miniProgram':
+  					case 'pageNotFound':
+  						signature = `${type}:${errorInfo.error || errorInfo.path || ''}`
+  						break
+  					case 'network':
+  						signature = `${type}:${errorInfo.url || ''}:${errorInfo.method || ''}`
+  						break
+  					case 'api':
+  						signature = `${type}:${errorInfo.url || ''}:${errorInfo.method || ''}:${errorInfo.statusCode || 0}`
+  						break
+  					default:
+  						signature = `${type}:${errorInfo.error || errorInfo.message || ''}`
+  				}
+  				return signature
+  			}
+  		}  
+  	/**
+  		 * 检查错误是否在去重间隔内已上报过
+  		 * @private
+  		 * @param {string|Object} signatureOrErrorInfo 错误签名或错误信息对象
+  		 * @returns {boolean} true表示是重复错误（应跳过），false表示是新错误（应上报）
+  		 */
+  		_isDuplicateError(signatureOrErrorInfo) {
+  			// 支持传入签名或 errorInfo 对象
+  			const signature = typeof signatureOrErrorInfo === 'string' 
+  				? signatureOrErrorInfo 
+  				: this._generateErrorSignature(signatureOrErrorInfo)
+  			
+  			const now = Date.now()
+  			const dedupInterval = this.config?.dedupInterval || DEFAULT_DEDUP_INTERVAL
+  	
+  			// 检查缓存中是否存在该签名
+  			if (this._errorCache.has(signature)) {
+  				const lastReportTime = this._errorCache.get(signature)
+  	
+  				// 如果在去重间隔内，认为是重复错误
+  				if (now - lastReportTime < dedupInterval) {
+  					console.info(`错误去重：跳过重复错误，距上次上报 ${Math.round((now - lastReportTime) / 1000)} 秒`)
+  					return true
+  				}
+  			}
+  	
+  			// 更新缓存
+  			this._errorCache.set(signature, now)
+  	
+  			// 清理过期的缓存条目（避免内存泄漏）
+  			this._cleanupErrorCache(now, dedupInterval)
+  
+  		return false
+  	}
+  
+  	/**
+  	 * 清理过期的错误缓存
+  	 * @private
+  	 * @param {number} now 当前时间戳
+  	 * @param {number} dedupInterval 去重间隔
+  	 */
+  	_cleanupErrorCache(now, dedupInterval) {
+  		// 当缓存超过100条时进行清理
+  		if (this._errorCache.size > 100) {
+  			for (const [key, timestamp] of this._errorCache.entries()) {
+  				if (now - timestamp > dedupInterval) {
+  					this._errorCache.delete(key)
+  				}
+  			}
+  		}
+  	}
+  
+  	/**
+  	 * 清空错误去重缓存
+  	 */
+  	clearErrorCache() {
+  		this._errorCache.clear()
+  		console.log('错误去重缓存已清空')
+  	}
+  
+  	/**
+  
+  		 * 处理全局错误
+  
+  		 * @private
+  
+  		 */
+  
+  		_handleGlobalError(errorInfo) {
+  
+  			// 错误级别过滤
+  
+  			if (!this._shouldReportError('global')) {
+  
+  				return
+  
+  			}
+  
+  			// 构建完整错误信息用于去重检查
+  
+  			const fullErrorInfo = {
+  
+  				...errorInfo,
+  
+  				message: errorInfo.message || 'Unknown global error',
+  
+  				source: errorInfo.source || '',
+  
+  				lineno: errorInfo.lineno || 0,
+  
+  				colno: errorInfo.colno || 0,
+  
+  			}
+  
+  			// 错误去重检查
+  
+  			if (this._isDuplicateError(fullErrorInfo)) {
+  
+  				return
+  
+  			}
+  
+  			this.errorStats.total++
+  
+  			this.errorStats.global++
+  
+  			this.errorStats.lastErrorTime = errorInfo.timestamp
+  
+  			this._sendErrorToWebhook({
+  
+  				...fullErrorInfo,
+  
+  				url: this._getCurrentUrl(),
+  
+  				userAgent: this._getUserAgent(),
+  
+  				page: getCurrentPageName(),
+  
+  			})
+  
+  		}
   /**
-   * 处理全局错误
-   * @private
-   */
-  _handleGlobalError(errorInfo) {
-    // 错误级别过滤
-    if (!this._shouldReportError('global')) {
-      return
-    }
-    this.errorStats.total++
-    this.errorStats.global++
-    this.errorStats.lastErrorTime = errorInfo.timestamp
-    this._sendErrorToWebhook({
-      ...errorInfo,
-      message: errorInfo.message || 'Unknown global error',
-      source: errorInfo.source || '',
-      lineno: errorInfo.lineno || 0,
-      colno: errorInfo.colno || 0,
-      url: this._getCurrentUrl(),
-      userAgent: this._getUserAgent(),
-      page: getCurrentPageName(),
-    })
-  }
-  /**
-   * 处理Promise错误
-   * @private
-   */
-  _handlePromiseError(errorInfo) {
-    // 错误级别过滤
-    if (!this._shouldReportError('promise')) {
-      return
-    }
-    this.errorStats.total++
-    this.errorStats.promise++
-    this.errorStats.lastErrorTime = errorInfo.timestamp
-    this._sendErrorToWebhook({
-      ...errorInfo,
-      reason: this._serializeError(errorInfo.reason),
-      url: this._getCurrentUrl(),
-      userAgent: this._getUserAgent(),
-      page: getCurrentPageName(),
-    })
-  }
-  /**
+  	 * 处理Promise错误
+  	 * @private
+  	 */
+  	_handlePromiseError(errorInfo) {
+  		// 错误级别过滤
+  		if (!this._shouldReportError('promise')) {
+  			return
+  		}
+  		// 构建完整错误信息用于去重检查
+  		const fullErrorInfo = {
+  			...errorInfo,
+  			reason: this._serializeError(errorInfo.reason),
+  		}
+  		// 错误去重检查
+  		if (this._isDuplicateError(fullErrorInfo)) {
+  			return
+  		}
+  		this.errorStats.total++
+  		this.errorStats.promise++
+  		this.errorStats.lastErrorTime = errorInfo.timestamp
+  		this._sendErrorToWebhook({
+  			...fullErrorInfo,
+  			url: this._getCurrentUrl(),
+  			userAgent: this._getUserAgent(),
+  			page: getCurrentPageName(),
+  		})
+  	}  /**
    * 处理console错误
    * @private
    */
   _handleConsoleError(errorInfo) {
-    // 错误级别过滤
-    if (!this._shouldReportError('console')) {
-      return
-    }
-    this.errorStats.total++
-    this.errorStats.console++
-    this.errorStats.lastErrorTime = errorInfo.timestamp
-    this._sendErrorToWebhook({
-      ...errorInfo,
-      url: this._getCurrentUrl(),
-      userAgent: this._getUserAgent(),
-      page: getCurrentPageName(),
-    })
+  // 错误级别过滤
+  if (!this._shouldReportError('console')) {
+  return
   }
+  // 错误去重检查
+  if (this._isDuplicateError(errorInfo)) {
+   return
+  }
+  this.errorStats.total++
+  this.errorStats.console++
+  this.errorStats.lastErrorTime = errorInfo.timestamp
+  this._sendErrorToWebhook({
+   ...errorInfo,
+    url: this._getCurrentUrl(),
+			userAgent: this._getUserAgent(),
+			page: getCurrentPageName(),
+		})
+	}
   /**
    * 处理小程序错误
    * @private
    */
   _handleMiniProgramError(errorInfo) {
-    // 错误级别过滤（小程序错误和页面未找到都属于严重错误）
-    const errorType = errorInfo.type === 'pageNotFound' ? 'pageNotFound' : 'miniProgram'
-    if (!this._shouldReportError(errorType)) {
-      return
-    }
-    this.errorStats.total++
-    this.errorStats.miniProgram++
-    this.errorStats.lastErrorTime = errorInfo.timestamp
-    this._sendErrorToWebhook({
-      ...errorInfo,
-      url: this._getCurrentUrl(),
-      userAgent: this._getUserAgent(),
-      page: getCurrentPageName(),
-    })
+  // 错误级别过滤（小程序错误和页面未找到都属于严重错误）
+  const errorType = errorInfo.type === 'pageNotFound' ? 'pageNotFound' : 'miniProgram'
+  if (!this._shouldReportError(errorType)) {
+  return
   }
+  // 错误去重检查
+  if (this._isDuplicateError(errorInfo)) {
+   return
+  }
+  this.errorStats.total++
+  this.errorStats.miniProgram++
+  this.errorStats.lastErrorTime = errorInfo.timestamp
+  this._sendErrorToWebhook({
+   ...errorInfo,
+    url: this._getCurrentUrl(),
+			userAgent: this._getUserAgent(),
+			page: getCurrentPageName(),
+		})
+	}
   /**
    * 处理网络错误
    * @private
    */
   _handleNetworkError(errorInfo) {
-    // 错误级别过滤
-    if (!this._shouldReportError('network')) {
-      return
-    }
-    this.errorStats.total++
-    this.errorStats.network++
-    this.errorStats.lastErrorTime = errorInfo.timestamp
-    this._sendErrorToWebhook({
-      ...errorInfo,
-      url: this._getCurrentUrl(),
-      userAgent: this._getUserAgent(),
-      page: getCurrentPageName(),
-    })
+  // 错误级别过滤
+  if (!this._shouldReportError('network')) {
+  return
   }
+  // 错误去重检查
+  if (this._isDuplicateError(errorInfo)) {
+   return
+  }
+  this.errorStats.total++
+  this.errorStats.network++
+  this.errorStats.lastErrorTime = errorInfo.timestamp
+  this._sendErrorToWebhook({
+   ...errorInfo,
+    url: this._getCurrentUrl(),
+			userAgent: this._getUserAgent(),
+			page: getCurrentPageName(),
+		})
+	}
   /**
    * 获取当前URL
    * @private
@@ -781,10 +989,13 @@ export const wrapPromise = promise => {
   return errorMonitorInstance.wrapPromise ? errorMonitorInstance.wrapPromise(promise) : promise
 }
 export const getErrorLevel = () => {
-  return errorMonitorInstance.getErrorLevel()
+return errorMonitorInstance.getErrorLevel()
 }
 export const setErrorLevel = level => {
-  return errorMonitorInstance.setErrorLevel(level)
+return errorMonitorInstance.setErrorLevel(level)
+}
+export const clearErrorCache = () => {
+	return errorMonitorInstance.clearErrorCache()
 }
 // 默认导出 - 向后兼容
 export default errorMonitorInstance
