@@ -744,16 +744,18 @@ class ErrorMonitor {
    * @private
    */
   async _sendErrorToWebhook(errorInfo, retryCount = 0, forceSend = false) {
-    // 环境检查：只在生产环境下发送错误信息
-    if (!forceSend && !this._isProduction() && !this.config?.forceEnable) {
-      console.info('非生产环境，错误信息不上报到webhook:', errorInfo.type)
-      return
-    }
-    const webhookUrl = import.meta.env.VITE_WEBHOOK
-    if (!webhookUrl) {
-      console.error('未配置webhook地址，无法发送错误信息')
-      return
-    }
+  		// 环境检查：只在生产环境下发送错误信息
+  		if (!forceSend && !this._isProduction() && !this.config?.forceEnable) {
+  			console.info('非生产环境，错误信息不上报到webhook:', errorInfo.type)
+  			return
+  		}
+  
+  		// 优先使用配置中的 webhookUrl，否则使用环境变量
+  		const webhookUrl = this.config?.webhookUrl || import.meta.env.VITE_WEBHOOK
+  		if (!webhookUrl) {
+  			console.error('未配置webhook地址，无法发送错误信息')
+  			return
+  		}
     try {
       // 格式化错误信息
       const message = this._formatErrorMessage(errorInfo)
