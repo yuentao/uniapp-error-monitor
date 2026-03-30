@@ -1,4 +1,30 @@
 /**
+ * 错误级别常量
+ * @constant {Object}
+ * @property {string} STRICT - 严格模式：监控所有错误
+ * @property {string} STANDARD - 标准模式：监控基本错误（全局错误、Promise错误、小程序错误、网络错误）
+ * @property {string} SILENT - 静默模式：仅监控严重错误（全局错误、小程序错误）
+ */
+export const ERROR_LEVEL = {
+  STRICT: 'strict', // 所有错误监控
+  STANDARD: 'standard', // 基本错误监控
+  SILENT: 'silent', // 仅监控严重的错误
+}
+/**
+ * 错误类型严重程度映射
+ * @private
+ */
+const ERROR_SEVERITY = {
+  global: 'critical', // 全局错误 - 严重
+  miniProgram: 'critical', // 小程序错误 - 严重
+  promise: 'normal', // Promise错误 - 普通
+  network: 'normal', // 网络错误 - 普通
+  api: 'normal', // API错误 - 普通
+  console: 'minor', // Console错误 - 轻微
+  manual: 'normal', // 手动上报 - 普通
+  pageNotFound: 'critical', // 页面未找到 - 严重
+}
+/**
  * 错误监控和上报类
  */
 class ErrorMonitor {
@@ -14,28 +40,22 @@ class ErrorMonitor {
       network: 0,
       lastErrorTime: null,
     }
-
     // Promise包装方法
     this.wrapPromise = null
-
     // 配置信息
     this.config = null
-
     // 项目信息
     this.projectInfo = {
       name: '未命名项目',
       version: '0.0.0',
     }
-
     // 尝试从 manifest.json 加载项目信息
     this._loadProjectInfo()
-
     // 应用初始配置
     if (Object.keys(options).length > 0) {
       this.initErrorMonitor(options)
     }
   }
-
   /**
    * 检测是否为生产环境
    * @private
@@ -52,16 +72,13 @@ class ErrorMonitor {
     } catch (error) {
       // 忽略错误，继续检测
     }
-
     // 检查环境变量MODE
     if (import.meta.env.MODE === 'development') {
       return false
     }
-
     // 默认：开发环境和体验版不启用，生产环境启用
     return true
   }
-
   /**
    * 初始化全局错误监控
    * @param {Object} options 配置选项
@@ -72,6 +89,7 @@ class ErrorMonitor {
    * @param {number} [options.maxRetries=3] 发送失败时最大重试次数
    * @param {number} [options.retryDelay=1000] 重试延迟时间(毫秒)
    * @param {boolean} [options.forceEnable=false] 强制启用错误监控（忽略环境检查）
+   * @param {string} [options.errorLevel='standard'] 错误级别：strict(所有错误)、standard(基本错误)、silent(仅严重错误)
    */
   initErrorMonitor(options = {}) {
     const config = {
@@ -82,23 +100,33 @@ class ErrorMonitor {
       maxRetries: 3,
       retryDelay: 1000,
       forceEnable: false,
+      errorLevel: ERROR_LEVEL.SILENT, // 默认静默模式
       ...options,
     }
-
     // 环境检查：只在生产环境下启用错误监控
     if (!config.forceEnable && !this._isProduction()) {
       console.info('当前为非生产环境，错误监控已禁用')
       return
     }
-
     // 检查webhook配置
     if (!config.webhookUrl) {
       console.warn('错误监控初始化失败：未配置webhook地址')
       return
     }
-
+    // 验证错误级别
+    const validLevels = [ERROR_LEVEL.STRICT, ERROR_LEVEL.STANDARD, ERROR_LEVEL.SILENT]
+    if (!validLevels.includes(config.errorLevel)) {
+      console.warn(`无效的错误级别 "${config.errorLevel}"，使用默认值 "standard"`)
+      config.errorLevel = ERROR_LEVEL.SILENT
+    }
     this.config = config
-
+    // 输出错误级别信息
+    const levelDescriptions = {
+      [ERROR_LEVEL.STRICT]: '严格模式 - 监控所有错误',
+      [ERROR_LEVEL.STANDARD]: '标准模式 - 监控基本错误',
+      [ERROR_LEVEL.SILENT]: '静默模式 - 仅监控严重错误',
+    }
+    console.log(`错误监控级别: ${levelDescriptions[config.errorLevel]}`)
     // 全局错误捕获（uniapp环境适配）
     if (config.enableGlobalError) {
       // Web环境
@@ -114,7 +142,6 @@ class ErrorMonitor {
             timestamp: Date.now(),
           })
         }
-
         // 处理未捕获的Promise错误
         window.addEventListener('unhandledrejection', event => {
           this._handlePromiseError({
@@ -125,7 +152,6 @@ class ErrorMonitor {
           })
         })
       }
-
       // uniapp环境 - 提供Promise包装工具
       if (typeof uni !== 'undefined' && config.enablePromiseError) {
         // 提供一个包装Promise的方法，让开发者可以手动包装重要的Promise
@@ -142,7 +168,6 @@ class ErrorMonitor {
         }
       }
     }
-
     // console.error捕获（可选）
     if (config.enableConsoleError) {
       const originalError = console.error
@@ -155,7 +180,6 @@ class ErrorMonitor {
         })
       }
     }
-
     // 微信小程序错误捕获
     if (typeof uni !== 'undefined') {
       // 监听小程序错误事件
@@ -167,7 +191,6 @@ class ErrorMonitor {
             timestamp: Date.now(),
           })
         })
-
       // 监听小程序页面错误
       uni.onPageNotFound &&
         uni.onPageNotFound(result => {
@@ -178,7 +201,6 @@ class ErrorMonitor {
             timestamp: Date.now(),
           })
         })
-
       // 监听小程序网络请求错误
       const originalRequest = uni.request
       uni.request = options => {
@@ -197,22 +219,23 @@ class ErrorMonitor {
         })
       }
     }
-
     console.log('错误监控已初始化')
   }
-
   /**
    * 手动上报错误
    * @param {string} type 错误类型 ('manual', 'api', 'network', 'global', 'promise', 'console', 'miniProgram')
    * @param {Error|Object} error 错误对象或错误信息
    * @param {Object} [context] 错误上下文信息
-   * @param {boolean} [forceSend=false] 强制发送（忽略环境检查）
+   * @param {boolean} [forceSend=false] 强制发送（忽略环境检查和错误级别过滤）
    */
   reportError(type = 'manual', error, context = {}, forceSend = false) {
-    // 自动提取API错误相关信息
-    let extractedError = error
+    // 错误级别过滤（forceSend 时跳过）
+    if (!forceSend && !this._shouldReportError(type)) {
+      console.info(`错误级别过滤：跳过上报 ${type} 类型错误`)
+      return
+    }
+    // 自动提取API错误相关信息    let extractedError = error
     let extractedContext = context
-    
     if (type === 'api' && typeof error === 'object' && error.config) {
       // 当type为'api'且error对象包含config属性时，自动提取API相关信息
       const response = error
@@ -226,11 +249,10 @@ class ErrorMonitor {
         requestHeaders: response.config?.header,
         environment: import.meta.env.MODE,
         // 保留原有的error信息
-        ...context
+        ...context,
       }
       extractedError = response.data?.msg || response.data?.message || response.message || error
     }
-
     const errorInfo = {
       type,
       error: extractedError instanceof Error ? extractedError.message : extractedError,
@@ -241,7 +263,6 @@ class ErrorMonitor {
       method: extractedContext.method || '',
       userAgent: this._getUserAgent(),
       page: getCurrentPageName(),
-
       // API错误特有字段
       statusCode: extractedContext.statusCode,
       statusText: extractedContext.statusText,
@@ -250,21 +271,17 @@ class ErrorMonitor {
       requestHeaders: extractedContext.requestHeaders,
       requestId: extractedContext.requestId,
       environment: extractedContext.environment,
-
       // 网络错误特有字段
       retryCount: extractedContext.retryCount,
       networkType: extractedContext.networkType,
       isConnected: extractedContext.isConnected,
     }
-
     // 更新错误统计
     this.errorStats.total++
     this.errorStats[type] = (this.errorStats[type] || 0) + 1
     this.errorStats.lastErrorTime = errorInfo.timestamp
-
     // 确定是否强制发送
     const shouldForceSend = forceSend || (type === 'api' && extractedContext && typeof extractedContext === 'object')
-
     if (shouldForceSend) {
       // 强制发送
       this._sendErrorToWebhook(errorInfo, 0, true)
@@ -272,7 +289,6 @@ class ErrorMonitor {
       this._sendErrorToWebhook(errorInfo)
     }
   }
-
   /**
    * 获取错误统计信息
    * @returns {Object} 错误统计信息
@@ -280,7 +296,6 @@ class ErrorMonitor {
   getErrorStats() {
     return { ...this.errorStats }
   }
-
   /**
    * 重置错误统计
    */
@@ -296,7 +311,6 @@ class ErrorMonitor {
       lastErrorTime: null,
     }
   }
-
   /**
    * 获取当前环境信息
    * @returns {Object} 环境信息
@@ -307,19 +321,67 @@ class ErrorMonitor {
       mode: import.meta.env.MODE,
       platform: this._getUserAgent(),
       errorMonitorEnabled: !!this.config,
+      errorLevel: this.config?.errorLevel || ERROR_LEVEL.SILENT,
       timestamp: Date.now(),
     }
   }
-
+  /**
+   * 根据错误级别判断是否应该上报该错误
+   * @private
+   * @param {string} errorType 错误类型
+   * @returns {boolean} 是否应该上报
+   */
+  _shouldReportError(errorType) {
+    const level = this.config?.errorLevel || ERROR_LEVEL.SILENT
+    const severity = ERROR_SEVERITY[errorType] || 'normal'
+    switch (level) {
+      case ERROR_LEVEL.STRICT:
+        // 严格模式：上报所有错误
+        return true
+      case ERROR_LEVEL.STANDARD:
+        // 标准模式：上报严重和普通错误，不上报轻微错误
+        return severity !== 'minor'
+      case ERROR_LEVEL.SILENT:
+        // 静默模式：仅上报严重错误
+        return severity === 'critical'
+      default:
+        return true
+    }
+  }
+  /**
+   * 获取当前错误级别
+   * @returns {string} 当前错误级别
+   */
+  getErrorLevel() {
+    return this.config?.errorLevel || ERROR_LEVEL.SILENT
+  }
+  /**
+   * 设置错误级别
+   * @param {string} level 错误级别 (strict/standard/silent)
+   */
+  setErrorLevel(level) {
+    const validLevels = [ERROR_LEVEL.STRICT, ERROR_LEVEL.STANDARD, ERROR_LEVEL.SILENT]
+    if (!validLevels.includes(level)) {
+      console.warn(`无效的错误级别 "${level}"，有效值为: strict, standard, silent`)
+      return
+    }
+    if (this.config) {
+      this.config.errorLevel = level
+      console.log(`错误级别已更新为: ${level}`)
+    }
+  }
   /**
    * 处理全局错误
    * @private
    */
   _handleGlobalError(errorInfo) {
+    // 错误级别过滤
+    if (!this._shouldReportError('global')) {
+      return
+    }
     this.errorStats.total++
     this.errorStats.global++
     this.errorStats.lastErrorTime = errorInfo.timestamp
-
     this._sendErrorToWebhook({
       ...errorInfo,
       message: errorInfo.message || 'Unknown global error',
@@ -331,16 +393,18 @@ class ErrorMonitor {
       page: getCurrentPageName(),
     })
   }
-
   /**
    * 处理Promise错误
    * @private
    */
   _handlePromiseError(errorInfo) {
+    // 错误级别过滤
+    if (!this._shouldReportError('promise')) {
+      return
+    }
     this.errorStats.total++
     this.errorStats.promise++
     this.errorStats.lastErrorTime = errorInfo.timestamp
-
     this._sendErrorToWebhook({
       ...errorInfo,
       reason: this._serializeError(errorInfo.reason),
@@ -349,16 +413,18 @@ class ErrorMonitor {
       page: getCurrentPageName(),
     })
   }
-
   /**
    * 处理console错误
    * @private
    */
   _handleConsoleError(errorInfo) {
+    // 错误级别过滤
+    if (!this._shouldReportError('console')) {
+      return
+    }
     this.errorStats.total++
     this.errorStats.console++
     this.errorStats.lastErrorTime = errorInfo.timestamp
-
     this._sendErrorToWebhook({
       ...errorInfo,
       url: this._getCurrentUrl(),
@@ -366,16 +432,19 @@ class ErrorMonitor {
       page: getCurrentPageName(),
     })
   }
-
   /**
    * 处理小程序错误
    * @private
    */
   _handleMiniProgramError(errorInfo) {
+    // 错误级别过滤（小程序错误和页面未找到都属于严重错误）
+    const errorType = errorInfo.type === 'pageNotFound' ? 'pageNotFound' : 'miniProgram'
+    if (!this._shouldReportError(errorType)) {
+      return
+    }
     this.errorStats.total++
     this.errorStats.miniProgram++
     this.errorStats.lastErrorTime = errorInfo.timestamp
-
     this._sendErrorToWebhook({
       ...errorInfo,
       url: this._getCurrentUrl(),
@@ -383,16 +452,18 @@ class ErrorMonitor {
       page: getCurrentPageName(),
     })
   }
-
   /**
    * 处理网络错误
    * @private
    */
   _handleNetworkError(errorInfo) {
+    // 错误级别过滤
+    if (!this._shouldReportError('network')) {
+      return
+    }
     this.errorStats.total++
     this.errorStats.network++
     this.errorStats.lastErrorTime = errorInfo.timestamp
-
     this._sendErrorToWebhook({
       ...errorInfo,
       url: this._getCurrentUrl(),
@@ -400,7 +471,6 @@ class ErrorMonitor {
       page: getCurrentPageName(),
     })
   }
-
   /**
    * 获取当前URL
    * @private
@@ -409,7 +479,6 @@ class ErrorMonitor {
     if (typeof window !== 'undefined') {
       return window.location?.href || ''
     }
-
     if (typeof uni !== 'undefined') {
       try {
         const pages = getCurrentPages()
@@ -421,10 +490,8 @@ class ErrorMonitor {
         // 忽略错误
       }
     }
-
     return ''
   }
-
   /**
    * 获取用户代理信息
    * @private
@@ -433,7 +500,6 @@ class ErrorMonitor {
     if (typeof navigator !== 'undefined') {
       return navigator.userAgent || ''
     }
-
     if (typeof uni !== 'undefined') {
       try {
         const systemInfo = uni.getSystemInfoSync()
@@ -442,10 +508,8 @@ class ErrorMonitor {
         return 'Unknown Device'
       }
     }
-
     return 'Unknown Device'
   }
-
   /**
    * 序列化错误对象
    * @private
@@ -458,7 +522,6 @@ class ErrorMonitor {
         stack: error.stack,
       }
     }
-
     if (typeof error === 'object' && error !== null) {
       try {
         return JSON.stringify(error, null, 2)
@@ -466,10 +529,8 @@ class ErrorMonitor {
         return String(error)
       }
     }
-
     return String(error)
   }
-
   /**
    * 发送错误到webhook
    * @private
@@ -480,13 +541,11 @@ class ErrorMonitor {
       console.info('非生产环境，错误信息不上报到webhook:', errorInfo.type)
       return
     }
-
     const webhookUrl = import.meta.env.VITE_WEBHOOK
     if (!webhookUrl) {
       console.error('未配置webhook地址，无法发送错误信息')
       return
     }
-
     try {
       // 格式化错误信息
       const message = this._formatErrorMessage(errorInfo)
@@ -509,20 +568,20 @@ class ErrorMonitor {
           fail: reject,
         })
       })
-
       console.log('错误信息已发送到webhook')
     } catch (error) {
       console.error('发送错误到webhook失败:', error)
-
       // 重试机制
       if (retryCount < (this.config?.maxRetries || 3)) {
-        setTimeout(() => {
-          this._sendErrorToWebhook(errorInfo, retryCount + 1)
-        }, (this.config?.retryDelay || 1000) * (retryCount + 1))
+        setTimeout(
+          () => {
+            this._sendErrorToWebhook(errorInfo, retryCount + 1)
+          },
+          (this.config?.retryDelay || 1000) * (retryCount + 1),
+        )
       }
     }
   }
-
   /**
    * 加载项目信息
    * @private
@@ -539,21 +598,18 @@ class ErrorMonitor {
       console.warn('无法加载项目信息，使用默认值')
     }
   }
-
   /**
    * 格式化错误消息
    * @private
    */
   _formatErrorMessage(errorInfo) {
     const timestamp = new Date(errorInfo.timestamp).toLocaleString('zh-CN')
-
     let message = `🚨 JavaScript错误报告\n`
     message += `📦 项目: ${this.projectInfo.name}\n`
     message += `🏷️ 版本: ${this.projectInfo.version}\n`
     message += `⏰ 时间: ${timestamp}\n`
     message += `📱 页面: ${errorInfo.page || '未知页面'}\n`
     message += `🌐 链接: ${errorInfo.url || '未知链接'}\n\n`
-
     switch (errorInfo.type) {
       case 'global':
         message += `🔍 错误类型: 全局错误\n`
@@ -565,17 +621,14 @@ class ErrorMonitor {
           message += `📍 行号: ${errorInfo.lineno}:${errorInfo.colno}\n`
         }
         break
-
       case 'promise':
         message += `🔍 错误类型: Promise错误\n`
         message += `📝 错误信息: ${this._serializeError(errorInfo.reason)}\n`
         break
-
       case 'console':
         message += `🔍 错误类型: Console错误\n`
         message += `📝 错误信息: ${errorInfo.args.join(' ')}\n`
         break
-
       case 'miniProgram':
         message += `🔍 错误类型: 小程序错误\n`
         message += `📝 错误信息: ${errorInfo.error || 'Unknown'}\n`
@@ -586,19 +639,16 @@ class ErrorMonitor {
           message += `🔗 查询参数: ${errorInfo.query}\n`
         }
         break
-
       case 'network':
         message += `🔍 错误类型: 网络错误\n`
         message += `📝 请求地址: ${errorInfo.url || 'Unknown'}\n`
         message += `📝 请求方法: ${errorInfo.method || 'Unknown'}\n`
-
         // 网络错误详细信息
         if (errorInfo.error) {
           if (typeof errorInfo.error === 'object') {
             // 处理网络错误对象
             message += `🔢 错误代码: ${errorInfo.error.code || errorInfo.error.errCode || 'Unknown'}\n`
             message += `📝 错误信息: ${errorInfo.error.message || errorInfo.error.errMsg || this._serializeError(errorInfo.error)}\n`
-
             // 网络错误特定信息
             if (errorInfo.error.errCode) {
               message += `🆔 微信错误码: ${errorInfo.error.errCode}\n`
@@ -611,12 +661,10 @@ class ErrorMonitor {
           }
         }
         break
-
       case 'api':
         message += `🔍 错误类型: 接口错误\n`
         message += `📝 请求地址: ${errorInfo.url || 'Unknown'}\n`
         message += `📝 请求方法: ${errorInfo.method || 'Unknown'}\n`
-
         // 请求信息
         if (errorInfo.requestData) {
           message += `📋 请求参数: ${typeof errorInfo.requestData === 'object' ? JSON.stringify(errorInfo.requestData, null, 2) : errorInfo.requestData}\n`
@@ -624,7 +672,6 @@ class ErrorMonitor {
         if (errorInfo.requestHeaders) {
           message += `🔑 请求头: ${this._serializeError(errorInfo.requestHeaders)}\n`
         }
-
         // 响应信息
         if (errorInfo.statusCode) {
           message += `📊 状态码: ${errorInfo.statusCode}\n`
@@ -632,7 +679,6 @@ class ErrorMonitor {
         if (errorInfo.statusText) {
           message += `📝 状态文本: ${errorInfo.statusText}\n`
         }
-
         // 错误详情
         if (errorInfo.error) {
           if (typeof errorInfo.error === 'object') {
@@ -646,7 +692,6 @@ class ErrorMonitor {
             if (errorInfo.error.data) {
               message += `📄 响应数据: ${this._serializeError(errorInfo.error.data)}\n`
             }
-
             // 如果是标准错误对象格式
             if (errorInfo.error.name || errorInfo.error.code) {
               message += `🏷️ 错误名称: ${errorInfo.error.name || errorInfo.error.code}\n`
@@ -659,12 +704,10 @@ class ErrorMonitor {
           }
         }
         break
-
       default:
         message += `🔍 错误类型: ${errorInfo.type}\n`
         message += `📝 错误信息: ${this._serializeError(errorInfo.error)}\n`
     }
-
     message += `\n📊 统计信息:\n`
     message += `总计错误: ${this.errorStats.total}\n`
     message += `全局错误: ${this.errorStats.global}\n`
@@ -673,16 +716,13 @@ class ErrorMonitor {
     message += `小程序错误: ${this.errorStats.miniProgram}\n`
     message += `接口错误: ${this.errorStats.api}\n`
     message += `网络错误: ${this.errorStats.network}\n`
-
     // 添加设备信息
     if (errorInfo.userAgent) {
       message += `\n📱 设备信息:\n${errorInfo.userAgent}\n`
     }
-
     return message
   }
 }
-
 /**
  * 获取当前页面名称
  * @returns {string} 页面名称
@@ -698,7 +738,6 @@ function getCurrentPageName() {
   } catch (error) {
     // 忽略错误，返回默认值
   }
-
   // 微信小程序环境
   if (typeof uni !== 'undefined') {
     try {
@@ -710,7 +749,6 @@ function getCurrentPageName() {
       return '未知页面'
     }
   }
-
   // Web环境
   try {
     if (typeof window !== 'undefined' && window.location) {
@@ -719,37 +757,34 @@ function getCurrentPageName() {
   } catch (error) {
     return '未知页面'
   }
-
   return '未知页面'
 }
-
 // 创建默认实例
 const errorMonitorInstance = new ErrorMonitor()
-
 // 命名导出 - 便捷方法
-export const initErrorMonitor = (options) => {
+export const initErrorMonitor = options => {
   return errorMonitorInstance.initErrorMonitor(options)
 }
-
 export const reportError = (type, error, context, forceSend) => {
   return errorMonitorInstance.reportError(type, error, context, forceSend)
 }
-
 export const getErrorStats = () => {
   return errorMonitorInstance.getErrorStats()
 }
-
 export const resetErrorStats = () => {
   return errorMonitorInstance.resetErrorStats()
 }
-
 export const getEnvironmentInfo = () => {
   return errorMonitorInstance.getEnvironmentInfo()
 }
-
-export const wrapPromise = (promise) => {
+export const wrapPromise = promise => {
   return errorMonitorInstance.wrapPromise ? errorMonitorInstance.wrapPromise(promise) : promise
 }
-
+export const getErrorLevel = () => {
+  return errorMonitorInstance.getErrorLevel()
+}
+export const setErrorLevel = level => {
+  return errorMonitorInstance.setErrorLevel(level)
+}
 // 默认导出 - 向后兼容
 export default errorMonitorInstance
